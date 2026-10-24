@@ -1,84 +1,99 @@
 # ninja-defenders-free
 
-領取《Ninja Defenders : Cat Shinobi》網頁商店（Xsolla Web Shop）每日免費的
-**1 Daily Free Ruby Cat Stone**，全自動、無人值守。
+領取《Ninja Defenders : Cat Shinobi》網頁商店（Xsolla Web Shop）每天一次的免費
+**1 Daily Free Ruby Cat Stone**（畫面顯示「每天免費紅貓石1個」），全自動、無人值守、跑完就結束。
 
-本專案的結構、容器化方式與錯誤處理，是照著
-[simao-silva/noip-renewer](https://github.com/simao-silva/noip-renewer)（MIT）的精神改寫：
-同樣是「用無頭瀏覽器做一件每天要做一次的小事，做完就讓容器結束」。
+結構與容器化方式參考 [simao-silva/noip-renewer](https://github.com/simao-silva/noip-renewer)（MIT）：
+同樣是「用無頭瀏覽器做一件每天要做一次的小事，做完就讓程式／容器結束」。
 
 | | noip-renewer | 本專案 |
 |---|---|---|
-| 目標 | No-IP 免費網域續期 | Ninja Defenders 每日免費紅寶石 |
+| 目標 | No-IP 免費網域續期 | Ninja Defenders 每日免費紅貓石 |
 | 登入方式 | 帳號 + 密碼（+ TOTP） | **只有 26 碼遊戲內帳號 ID** |
 | 登入欄位 | `#username` / `#password` | `#user-id-input` |
-| 動作 | 逐一點 `Confirm` | 點免費商品的領取鈕 + 確認視窗 |
-| 結束 | 登出後結束 | 領取成功後直接結束 |
+| 動作 | 逐一點 `Confirm` | 點免費卡片的領取鈕 |
+| 結束 | 登出後結束 | 領取成功／今日已領後結束 |
 
-> **一句話**：`docker run --rm -e NINJA_USER_ID=<你的26碼ID> ninja-defenders-free`
-> 跑完（領到或今天已領）就自動退出，容器消失。
+```
+docker run --rm --shm-size=1g -e NINJA_USER_ID=<你的26碼ID> ninja-defenders-free
+```
 
 ---
 
 ## 它是怎麼運作的
 
-1. 啟動無頭 Firefox（geckodriver + Selenium），開啟 <https://catshinobi.xsolla.site/>。
-2. 關掉 cookie 同意列 / 促銷彈窗。
-3. 點右上角 **Log in**，在 `#user-id-input` 填入你的 26 碼帳號 ID，按下方登入鈕。
-4. 等待登入完成（登入框關閉，或偵測到 token）。
-5. 找出「免費」商品卡（預設以 `Ruby Cat Stone` / `Daily Free` 等字樣辨識），按下領取鈕。
-6. 若有確認彈窗，一併按掉。
-7. 等到成功提示（toast）或按鈕變成不可按，印出結果並以 exit code 0 結束。
-
-**不需要** 帳號、密碼、TOTP —— Xsolla 這個商店是用「遊戲內帳號 ID」直接登入的。
+1. 啟動無頭瀏覽器（映像內建 Firefox；Windows 本機預設 Edge），開啟 <https://catshinobi.xsolla.site/>。
+2. 關掉 cookie 同意列。
+3. 點右上角 **Log in / 登入**，在 `#user-id-input` 填入 26 碼帳號 ID，按下方登入鈕。
+   - 送出策略會依序嘗試：**按鈕文字比對 → `type=submit` → 在輸入框按 Enter**（最多 3 輪）。
+   - 若已有登入狀態（例如使用固定 profile），會自動跳過登入。
+4. 找到免費卡片上的按鈕：
+   - `button[data-testid="free-button"]` 或 `button[data-button-type="free"]`
+   - 這是**語言無關**的定位方式，所以商店顯示中文、英文、日文、韓文都不影響。
+5. 判斷狀態：
+   - 按鈕 `disabled` 或含 `[data-testid="owned"]`（顯示「已擁有」）→ 今天已領，直接 exit 0。
+   - 否則點下去，處理可能出現的確認彈窗，然後等按鈕變成 owned／出現成功提示。
+6. 印出結果並結束行程；用 `docker run --rm` 時容器也一併消失。
 
 ---
 
 ## 快速開始
 
-### 1. 取得你的帳號 ID
-
-遊戲內 → 左上角頭像 → 個人檔案頁面最下方的 **26 碼英數 ID**（旁邊有 `Copy` 鈕）。
-商店 FAQ 也是這樣寫的：*"The 26-character account ID, consisting of English letters and numbers,
-is located at the bottom of the profile page."*
-
-### 2. 建置映像
+### A. Docker（任何有 Docker 的機器，含 NAS）
 
 ```bash
-git clone https://github.com/<你的帳號>/ninja-defenders-free.git
+git clone https://github.com/iamafreeride/ninja-defenders-free.git
 cd ninja-defenders-free
 docker build -t ninja-defenders-free .
-```
 
-### 3. 執行
-
-```bash
 docker run --rm --shm-size=1g \
-  -e NINJA_USER_ID=AbCdEfGhIjKlMnOpQrStUvWxYz \
+  -e NINJA_USER_ID=<你的26碼ID> \
   ninja-defenders-free
 ```
 
-或用 compose（推薦，設定寫在 `.env` 裡）：
+或用 compose（設定寫在 `.env`）：
 
 ```bash
 cp .env.example .env      # 填入 NINJA_USER_ID
 docker compose up --build
 ```
 
-成功時終端機大概長這樣：
+### B. Windows 本機（不用裝 Docker）
+
+1. 安裝 Python 3.9+（安裝時勾 **Add python.exe to PATH**）。
+2. **雙擊 `run.bat`**。
+   - 第一次會自動建立 `.venv` 並安裝 selenium（約 30 秒）。
+   - 沒有設定 ID 時會問你：`Account ID (26 letters/digits):`，貼上後按 Enter。
+   - 之後把 ID 寫進 `.env` 的 `NINJA_USER_ID=`，就不必每次輸入。
+3. 預設用 **Edge**（Windows 10/11 內建），不需要另外裝驅動。
+
+命令列等價作法：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt
+.\.venv\Scripts\python claim.py <26碼ID>
+```
+
+> 也可以不改 `.env`，直接把 ID 當第一個參數：`python claim.py 01JB2XX...`
+
+### 你的 26 碼 ID 在哪
+
+遊戲內 → 左上角頭像 → 個人檔案頁面**最下方**的 26 碼英數（旁邊有 `Copy`）。
+商店 FAQ 也這樣寫：*"The 26-character account ID ... is located at the bottom of the profile page."*
+
+成功時的輸出長這樣（實際測試）：
 
 ```
-[20:31:02] Ninja Defenders daily reward -- target https://catshinobi.xsolla.site/
-[20:31:09] Page loaded
-[20:31:09] Opening login dialog
-[20:31:10] Entered user id AbCdEfGhIjKlMnOpQrStUvWxYz
-[20:31:10] Clicked login button ("Log in")
-[20:31:14] Session token detected
-[20:31:14] Logged in
-[20:31:15] Claiming: "1 Daily Free Ruby Cat Stone ..."
-[20:31:17] Confirmed dialog ("Claim")
-[20:31:19] Toast: reward claimed successfully
-[20:31:19] Daily free Ruby Cat Stone claimed (17s)
+[21:43:30] Ninja Defenders daily reward -- target https://catshinobi.xsolla.site/
+[21:43:30] Starting Edge (headless)
+[21:43:44] Page loaded
+[21:43:53] Opening login dialog
+[21:43:59] Login button not found, trying the input directly
+[21:44:10] No login form, but the store is loaded -- reusing the existing session
+[21:44:10] Logged in
+[21:44:10] Free item already shows as owned
+[21:44:10] Already claimed today (40s), nothing to do
 ```
 
 ---
@@ -87,20 +102,18 @@ docker compose up --build
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `NINJA_USER_ID` | （必填） | 26 碼遊戲帳號 ID，也可用第一個命令列參數傳入 |
+| `NINJA_USER_ID` | （必填） | 26 碼遊戲帳號 ID；也可用第一個命令列參數 |
+| `BROWSER` | `firefox` | `firefox` / `edge` / `chrome`（`run.bat` 會自動設成 `edge`） |
+| `HEADLESS` | `true` | `false` 會開可見的瀏覽器，方便看它到底在點什麼 |
+| `DEBUG` | `false` | 失敗時保存截圖 + DOM 到 `artifacts/` |
 | `SITE_URL` | `https://catshinobi.xsolla.site/` | 商店網址 |
-| `HEADLESS` | `true` | `false` 會開可見的瀏覽器（除錯用，需要 X server） |
-| `DEBUG` | `false` | 失敗時額外保存截圖與 DOM 到 `artifacts/` |
 | `LOGIN_TIMEOUT` | `60` | 等登入完成的秒數 |
-| `CLAIM_TIMEOUT` | `90` | 等免費商品出現的秒數 |
-| `RESULT_TIMEOUT` | `60` | 等成功提示的秒數 |
-| `USER_ID_SELECTOR` | `#user-id-input` | 帳號輸入框的 CSS selector |
-| `CLAIM_WORDS` | `free,get,claim,receive,領取,무료,...` | 領取鈕上可能出現的字 |
-| `TARGET_WORDS` | `ruby cat stone,daily free,紅寶石,...` | 用來在多張卡片中挑對目標 |
-| `SUCCESS_WORDS` / `ALREADY_WORDS` | 見 `claim.py` | 成功 / 今日已領的判定字串 |
-| `ARTIFACTS_DIR` | `/app/artifacts` | 除錯產物輸出目錄 |
-
-站方改版時，通常**不必改程式**，先試著用環境變數覆蓋文字比對即可。
+| `CLAIM_TIMEOUT` | `90` | 等免費按鈕出現的秒數 |
+| `RESULT_TIMEOUT` | `60` | 等「已擁有」或成功提示的秒數 |
+| `USER_ID_SELECTOR` | `#user-id-input` | 帳號輸入框 selector |
+| `WEBDRIVER_PATH` | 自動 | 指定 geckodriver / msedgedriver 路徑（自動下載失敗時用） |
+| `BROWSER_PROFILE_DIR` | 無 | 指定瀏覽器 profile 目錄，可保留登入狀態 |
+| `ARTIFACTS_DIR` | `/app/artifacts` | 除錯產物目錄 |
 
 ---
 
@@ -112,58 +125,46 @@ docker compose up --build
 | `1` | 自動化失敗：找不到元素、逾時、登入被拒 |
 | `2` | 設定錯誤：ID 缺少或格式不符（非 26 碼英數） |
 
-搭配 cron / 排程器時，`1` 就該通知你。
-
 ---
 
 ## 排程（每天一次）
 
-Linux crontab：
+Linux / NAS：
 
 ```cron
-# 每天 09:05 領取
 5 9 * * * cd /opt/ninja-defenders-free && /usr/bin/docker compose run --rm claim >> claim.log 2>&1
 ```
 
-Windows 工作排程器：
+Windows 工作排程器：動作設成「啟動程式」，程式填 `C:\path\to\run.bat`，不要勾「只在使用者登入時執行」，
+並把 `run.bat` 最後的 `pause` 拿掉（或改用 `pythonw`）。最簡單是直接呼叫：
 
 ```powershell
 docker run --rm --shm-size=1g -e NINJA_USER_ID=<ID> ninja-defenders-free
 ```
 
-> 每日獎勵一天只能領一次；重複執行是安全的（會回報 `Already claimed today` 並 exit 0）。
+> 每日獎勵一天只能領一次，重跑是安全的：會回報 `Already claimed today` 並 exit 0。
 
 ---
 
 ## 疑難排解
 
-**卡在「Opening login dialog」**
-登入鈕的文字可能是別的語言。覆蓋它：
+**按鈕顯示「已擁有」**
+代表**這個帳號今天已經領過了**（可能你手動領過）。程式會印 `Already claimed today` 並 exit 0，
+隔天再跑就會真的領。畫面下方的「開放購買時間還剩下 …」是活動剩餘時間，不是冷卻時間。
 
-```bash
--e LOGIN_OPEN_WORDS="log in,login,登入"
-```
+**卡在「Opening login dialog」／登入沒完成**
+先用 `DEBUG=true` 跑一次，看 `artifacts/` 裡的截圖。常見原因：
 
-**登入了但找不到免費商品**
-商店可能把免費項目放在別的區塊或改了標題。先看除錯產物：
+- 登入鈕文字不同 → 覆蓋 `LOGIN_SUBMIT_WORDS="log in,login,登入,..."`
+- 出現 captcha → 無頭瀏覽器過不了，改用 `HEADLESS=false` 在有螢幕的機器跑
+- Firefox 在 Windows 上報 `Unable to write to temporary directory` → 把 `TEMP`/`TMP` 指到可寫目錄，或改用 `BROWSER=edge`
 
-```bash
-docker run --rm --shm-size=1g -e DEBUG=true \
-  -v "$PWD/artifacts:/app/artifacts" \
-  -e NINJA_USER_ID=<ID> ninja-defenders-free
-```
+**找不到免費按鈕**
+商店改版了。看 `artifacts/*.html`，找 `data-testid="free-button"` 或 `data-button-type="free"` 是否還在；
+若改成別的屬性，覆蓋 `FREE_BUTTON_SELECTOR`（見 `claim.py` 的 `find_free_button`）。
 
-打開 `artifacts/*.png` 與 `*.html`，找出商品卡上的實際文字，然後：
-
-```bash
--e TARGET_WORDS="ruby cat stone"  -e CLAIM_WORDS="free,claim,get"
-```
-
-**Firefox 隨機崩潰**
-`/dev/shm` 太小。加上 `--shm-size=1g`（compose 檔已設定）。
-
-**「Invalid user id」/ 登入被拒**
-ID 必須是 26 碼英數，且要從**遊戲內**複製（不是商店網址、不是暱稱）。
+**Firefox 隨機崩潰（Docker）**
+`/dev/shm` 太小，加 `--shm-size=1g`（compose 檔已設定）。
 
 ---
 
@@ -171,17 +172,19 @@ ID 必須是 26 碼英數，且要從**遊戲內**複製（不是商店網址、
 
 ```
 .
-├── claim.py                 # 全部邏輯：登入 → 領取 → 判定結果
+├── claim.py                 # 登入 → 找免費按鈕 → 領取 → 判定結果
+├── run.bat                  # Windows 一鍵執行（自動建 venv、問 ID、pause）
 ├── Dockerfile               # Debian slim + Firefox ESR + geckodriver
 ├── docker-compose.yml
 ├── requirements.txt         # selenium
 ├── .env.example
-└── .github/workflows/docker.yml   # 建置並推送到 GHCR（amd64 + arm64）
+├── publish.ps1              # 一鍵把這個資料夾發佈到 GitHub
+└── .github/workflows/docker.yml   # 建置並推送 GHCR（amd64 + arm64）
 ```
 
 ## 免責聲明
 
-- 僅供**你自己的帳號**、每天一次使用；請勿用來大量註冊或代領他人帳號。
+- 僅供**你自己的帳號**、每天一次使用；請勿用來代領他人帳號或大量註冊。
 - 這是瀏覽器自動化，不是官方 API。Xsolla 或 CookApps 隨時可能改版、加上驗證或限制，
   也可能與其服務條款相牴觸 —— 風險自負。
 - 本專案與 CookApps、Xsolla 均無任何關係。

@@ -5,6 +5,7 @@
 
 # Runtime output
 artifacts/
+*.log
 *.png
 *.html
 
@@ -15,8 +16,21 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# Scratch files / locally downloaded drivers
+_*.py
+*.zip
+geckodriver.exe
+msedgedriver.exe
+.selenium/
+.tmp/
+*.edge-profile/
+.browser-profile/
+
 # Editors / OS
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# scratch
+_*.txt

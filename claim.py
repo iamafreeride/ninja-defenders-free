@@ -42,6 +42,7 @@ from selenium.common.exceptions import (
     WebDriverException,
 )
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support import expected_conditions as EC
@@ -54,6 +55,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 BASE_URL = os.getenv("SITE_URL", "https://catshinobi.xsolla.site/")
 
 USER_ID_SELECTOR = os.getenv("USER_ID_SELECTOR", "#user-id-input")
+
+#: The free/gift button on the store card.  These data attributes are stable
+#: across languages, unlike the button label ("Free" / "免費" / "無料" ...).
+FREE_BUTTON_SELECTOR = os.getenv(
+    "FREE_BUTTON_SELECTOR",
+    "button[data-testid='free-button'], "
+    "button[data-button-type='free'], "
+    "[data-testid='free-button']",
+)
 
 #: Words that may appear on the button that opens the login dialog.
 LOGIN_OPEN_WORDS = [
@@ -114,7 +124,7 @@ ALREADY_WORDS = [
     for w in os.getenv(
         "ALREADY_WORDS",
         "already claimed,already received,already purchased,come back tomorrow,"
-        "next claim,已領取過,明天再來,明天再来,내일,明日",
+        "next claim,owned,已擁有,已拥有,已購買,已购买,已領取過,明天再來,내일,明日",
     ).split(",")
     if w.strip()
 ]
@@ -135,6 +145,10 @@ CLAIM_TIMEOUT = float(os.getenv("CLAIM_TIMEOUT", "90"))
 RESULT_TIMEOUT = float(os.getenv("RESULT_TIMEOUT", "60"))
 
 HEADLESS = os.getenv("HEADLESS", "true").strip().lower() not in {"0", "false", "no"}
+
+#: firefox (the image), or edge / chrome when running natively on Windows/macOS.
+BROWSER = os.getenv("BROWSER", "firefox").strip().lower()
+
 DEBUG = os.getenv("DEBUG", "false").strip().lower() in {"1", "true", "yes"}
 
 USER_AGENT = os.getenv(
@@ -313,7 +327,43 @@ def has_session(driver) -> bool:
 # --------------------------------------------------------------------------- #
 
 
-def build_driver() -> webdriver.Firefox:
+def build_driver():
+    """Firefox by default (that is what the image ships), Edge/Chrome on request."""
+    driver_path = os.getenv("WEBDRIVER_PATH")
+    profile_dir = os.getenv("BROWSER_PROFILE_DIR")
+
+    if BROWSER in {"edge", "msedge", "microsoft-edge"}:
+        from selenium.webdriver.edge.options import Options as EdgeOptions
+        from selenium.webdriver.edge.service import Service as EdgeService
+
+        options = EdgeOptions()
+        if HEADLESS:
+            options.add_argument("--headless=new")
+        options.add_argument("--window-size=1440,1000")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        if profile_dir:
+            options.add_argument(f"--user-data-dir={Path(profile_dir).absolute()}")
+        service = EdgeService(executable_path=driver_path) if driver_path else EdgeService()
+        log(f"Starting Edge ({'headless' if HEADLESS else 'visible'})")
+        return webdriver.Edge(options=options, service=service)
+
+    if BROWSER in {"chrome", "google-chrome"}:
+        from selenium.webdriver.chrome.options import Options as ChromeOptions
+        from selenium.webdriver.chrome.service import Service as ChromeService
+
+        options = ChromeOptions()
+        if HEADLESS:
+            options.add_argument("--headless=new")
+        options.add_argument("--window-size=1440,1000")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        if profile_dir:
+            options.add_argument(f"--user-data-dir={Path(profile_dir).absolute()}")
+        service = ChromeService(executable_path=driver_path) if driver_path else ChromeService()
+        log(f"Starting Chrome ({'headless' if HEADLESS else 'visible'})")
+        return webdriver.Chrome(options=options, service=service)
+
     options = Options()
     if HEADLESS:
         options.add_argument("-headless")
@@ -430,63 +480,122 @@ def fill_user_id(driver, field, user_id: str) -> None:
     log(f"Entered user id {user_id}")
 
 
-def submit_login(driver, field) -> None:
-    """Press the button that submits the user id, staying inside the dialog."""
-    scopes = []
-    for xpath in (
-        "./ancestor::form[1]",
-        "./ancestor::*[@role='dialog'][1]",
-        "./ancestor::*[contains(@class,'modal')][1]",
-        "./ancestor::*[contains(@class,'Modal')][1]",
-    ):
+def dialog_scope(driver, field=None):
+    """Return the element that looks like the open login dialog."""
+    for selector in ("[role='dialog']", "[class*='modal']", "[class*='Modal']", "form"):
         try:
-            scopes.append(field.find_element(By.XPATH, xpath))
-        except NoSuchElementException:
+            for element in driver.find_elements(By.CSS_SELECTOR, selector):
+                if visible(element) and element.find_elements(By.CSS_SELECTOR, USER_ID_SELECTOR):
+                    return element
+        except WebDriverException:
             continue
 
-    # No <form>/dialog wrapper: widen the search one ancestor at a time so we
-    # never end up clicking the page header's own "Log in" button.
-    if not scopes:
+    if field is not None:
         node = field
         for _ in range(5):
             try:
                 node = node.find_element(By.XPATH, "..")
             except (NoSuchElementException, StaleElementReferenceException):
-                break
-            scopes.append(node)
+                return None
+            try:
+                if node.find_elements(By.XPATH, ".//button"):
+                    return node
+            except WebDriverException:
+                return None
+    return None
 
-    for scope in scopes:
+
+def dialog_buttons(scope):
+    try:
+        return [
+            b
+            for b in scope.find_elements(By.XPATH, ".//button | .//*[@role='button']")
+            if visible(b) and b.is_enabled()
+        ]
+    except WebDriverException:
+        return []
+
+
+def submit_login(driver, field, strategy: int = 1) -> None:
+    """Submit the id: 1 = click by label, 2 = any submit button, 3 = press Enter."""
+    if strategy == 3:
         try:
-            candidates = scope.find_elements(By.XPATH, ".//button | .//*[@role='button']")
-        except WebDriverException:
-            continue
+            field.send_keys(Keys.ENTER)
+        except WebDriverException as exc:
+            raise LoginRejected(f"Could not press Enter: {exc}") from exc
+        log("Pressed Enter in the account id field")
+        return
 
+    scope = dialog_scope(driver, field)
+    if scope is None:
+        raise LoginRejected("Login dialog could not be located")
+
+    candidates = dialog_buttons(scope)
+    if not candidates:
+        if strategy == 2:
+            raise LoginRejected("Login dialog has no buttons")
+        return submit_login(driver, field, strategy=3)
+
+    if strategy == 1:
         for element in candidates:
-            if not visible(element) or not element.is_enabled():
-                continue
             text = norm(element.text)
-            if matches(text, LOGIN_SUBMIT_WORDS) or text in {"→", ">"}:
+            if text and len(text) <= 20 and matches(text, LOGIN_SUBMIT_WORDS):
                 if click(driver, element):
                     log(f'Clicked login button ("{text}")')
                     return
 
-        for element in candidates:
-            if visible(element) and element.is_enabled() and element.get_attribute("type") == "submit":
-                if click(driver, element):
-                    log("Clicked submit button")
-                    return
-
-    # Last resort: the only button inside the dialog.
-    for scope in scopes:
-        try:
-            candidates = [b for b in scope.find_elements(By.XPATH, ".//button") if visible(b) and b.is_enabled()]
-        except WebDriverException:
-            continue
-        if len(candidates) == 1 and click(driver, candidates[0]):
-            log("Clicked the only button in the dialog")
+    for element in candidates:
+        if element.get_attribute("type") == "submit" and click(driver, element):
+            log("Clicked submit button")
             return
 
-    raise LoginRejected("Could not find the login submit button")
+    for element in candidates:
+        text = norm(element.text)
+        if not text or any(word in text for word in ("cancel", "close", "back", "取消", "닫기")):
+            continue
+        if click(driver, element):
+            log(f'Clicked "{text}"')
+            return
+
+    submit_login(driver, field, strategy=3)
+
+
+def login_error_text(driver, scope) -> str:
+    """Visible, short validation errors -- preferably from inside the dialog."""
+    chunks = []
+    roots = [scope] if scope is not None else []
+    roots.append(driver)
+    for root in roots:
+        for selector in (
+            "[role='alert']",
+            "[class*='error']",
+            "[class*='Error']",
+            "[class*='invalid']",
+        ):
+            try:
+                for element in root.find_elements(By.CSS_SELECTOR, selector):
+                    if not visible(element):
+                        continue
+                    text = norm(element.text)
+                    if text and len(text) <= 160 and text not in chunks:
+                        chunks.append(text)
+            except WebDriverException:
+                continue
+    return " | ".join(chunks)
+
+
+def has_captcha(driver) -> bool:
+    try:
+        for element in driver.find_elements(
+            By.CSS_SELECTOR,
+            "iframe[src*='captcha'], iframe[src*='turnstile'], iframe[src*='hcaptcha'], "
+            "[class*='captcha'], [id*='captcha']",
+        ):
+            if visible(element):
+                return True
+    except WebDriverException:
+        return False
+    return False
 
 
 def user_id_input_visible(driver) -> bool:
@@ -496,47 +605,67 @@ def user_id_input_visible(driver) -> bool:
         return False
 
 
-def wait_for_login(driver, timeout: float) -> None:
-    """The dialog closing (or a token appearing) means the id was accepted."""
+def wait_login(driver, timeout: float) -> str:
+    """Return "ok", "error:<text>" or "timeout"."""
     deadline = time.time() + timeout
     closed_since = None
 
     while time.time() < deadline:
-        error = alerts_text(driver)
-        if error and any(
-            word in error
-            for word in ("invalid", "not found", "incorrect", "error", "無效", "오류", "エラー")
-        ):
-            raise LoginRejected(error)
-
         if has_session(driver):
-            log("Session token detected")
-            return
+            return "ok"
+
+        error = login_error_text(driver, None)
+        if error:
+            return "error:" + error
 
         if user_id_input_visible(driver):
             closed_since = None
         else:
             closed_since = closed_since or time.time()
             if time.time() - closed_since >= 2.0:
-                log("Login dialog closed")
-                return
+                return "ok"
 
         time.sleep(0.5)
 
-    raise LoginRejected(f"Login did not complete within {timeout:.0f}s")
+    return "timeout"
 
 
 def login(driver, user_id: str) -> None:
     field = open_login_form(driver)
     if field is None:
+        # With a persistent profile the shop may already be logged in, in which
+        # case there is no login button and no dialog at all.
+        if find_free_button(driver) is not None:
+            log("No login form, but the store is loaded -- reusing the existing session")
+            return
         raise LoginRejected(
             f"User id input ({USER_ID_SELECTOR}) never appeared -- "
             "the shop layout may have changed."
         )
-    fill_user_id(driver, field, user_id)
-    submit_login(driver, field)
-    wait_for_login(driver, LOGIN_TIMEOUT)
-    dismiss_overlays(driver)
+
+    for attempt in (1, 2, 3):
+        if attempt > 1:
+            field = wait_for_user_id_input(driver, 5) or field
+
+        fill_user_id(driver, field, user_id)
+        log(f"Login attempt {attempt}")
+        submit_login(driver, field, strategy=attempt)
+
+        outcome = wait_login(driver, LOGIN_TIMEOUT if attempt == 1 else 30)
+        if outcome == "ok":
+            log("Logged in")
+            dismiss_overlays(driver)
+            return
+        if outcome.startswith("error:"):
+            raise LoginRejected(outcome[6:])
+        if has_captcha(driver):
+            raise LoginRejected(
+                "The shop is asking for a captcha -- a headless browser cannot pass it. "
+                "Try HEADLESS=false on a machine with a screen."
+            )
+        log("Login did not complete; retrying with the next submit strategy")
+
+    raise LoginRejected("Login did not complete after 3 attempts")
 
 
 # --------------------------------------------------------------------------- #
@@ -563,8 +692,33 @@ def card_text(element, levels: int = 6) -> str:
     return best
 
 
+def find_free_button(driver):
+    """The store's free/gift button, targeted by data attribute (language agnostic)."""
+    try:
+        for element in driver.find_elements(By.CSS_SELECTOR, FREE_BUTTON_SELECTOR):
+            if visible(element):
+                return element
+    except WebDriverException:
+        pass
+    return None
+
+
+def button_is_owned(button) -> bool:
+    """True once the item has been claimed (button disabled / shows "owned")."""
+    try:
+        if button.get_attribute("disabled") is not None:
+            return True
+        if "disabled" in (button.get_attribute("class") or ""):
+            return True
+        return bool(
+            button.find_elements(By.CSS_SELECTOR, "[data-testid='owned'], [data-id='owned']")
+        )
+    except (StaleElementReferenceException, WebDriverException):
+        return False
+
+
 def pick_claim_button(driver):
-    """Return (button, card description) or (None, None)."""
+    """Fallback for locales/markups without the data attributes: match the label."""
     candidates = []
     for element in buttons(driver):
         if not visible(element) or not element.is_enabled():
@@ -578,7 +732,6 @@ def pick_claim_button(driver):
     if not candidates:
         return None, None
 
-    # Prefer a button whose card mentions the target item.
     for element, text, card in candidates:
         if any(word in card for word in TARGET_WORDS):
             return element, card or text
@@ -615,49 +768,50 @@ def confirm_dialog(driver) -> bool:
 
 
 def wait_for_result(driver, button, timeout: float) -> str:
-    """Wait until the page tells us the claim worked."""
+    """Wait until the page says the claim worked."""
     deadline = time.time() + timeout
     missing = 0
+
     while time.time() < deadline:
         toast = toast_text(driver)
         if matches(toast, SUCCESS_WORDS):
             log(f"Toast: {toast[:120]}")
             return "claimed"
-
         if matches(toast, ALREADY_WORDS):
             log(f"Toast: {toast[:120]}")
             return "already"
 
+        if button is not None and button_is_owned(button):
+            log("Free item is now marked as owned")
+            return "claimed"
+
         if button is not None:
             try:
-                if not button.is_enabled():
-                    log("Claim button became disabled")
-                    return "claimed"
+                button.is_enabled()
             except StaleElementReferenceException:
-                log("Claim button was re-rendered, re-checking the page")
+                log("Free button was re-rendered")
                 button = None
             except WebDriverException:
                 pass
         else:
-            # After a successful claim the free card usually stops being
-            # clickable.  Require two consecutive misses so a re-render does
-            # not look like a success.
-            remaining, _ = pick_claim_button(driver)
-            if remaining is None:
+            current = find_free_button(driver)
+            if current is None:
                 missing += 1
                 if missing >= 2:
-                    log("No claimable free item left on the page")
+                    log("Free button disappeared from the page")
                     return "claimed"
+            elif button_is_owned(current):
+                log("Free item is now marked as owned")
+                return "claimed"
             else:
+                button = current
                 missing = 0
 
-        text = page_text(driver)
-        if matches(text, ALREADY_WORDS):
+        if matches(page_text(driver), ALREADY_WORDS):
             return "already"
 
         time.sleep(1.0)
 
-    # Slow sites: give the toast one last chance.
     if matches(toast_text(driver), SUCCESS_WORDS):
         return "claimed"
     return "unknown"
@@ -666,23 +820,33 @@ def wait_for_result(driver, button, timeout: float) -> str:
 def claim(driver) -> str:
     deadline = time.time() + CLAIM_TIMEOUT
     button = None
+    card = ""
+
     while time.time() < deadline:
-        button, card = pick_claim_button(driver)
+        button = find_free_button(driver)
         if button is not None:
-            log(f'Claiming: "{card[:100]}"')
-            if not click(driver, button):
-                log("Click was blocked, retrying")
-                time.sleep(2)
+            card = card_text(button)
+            if button_is_owned(button):
+                log("Free item already shows as owned")
+                return "already"
+        else:
+            button, card = pick_claim_button(driver)
+            if button is None:
+                dismiss_overlays(driver)
+                log("Free item button not found yet, waiting")
+                time.sleep(3)
                 continue
+
+        log(f'Claiming: "{card[:100]}"')
+        if click(driver, button):
             break
-        dismiss_overlays(driver)
-        log("Free item not found yet, waiting")
-        time.sleep(3)
+        log("Click was blocked, retrying")
+        time.sleep(2)
 
     if button is None:
         raise RuntimeError(
-            f"No claimable free item found within {CLAIM_TIMEOUT:.0f}s "
-            "(already claimed today, or the selector needs updating)"
+            f"No free item button found within {CLAIM_TIMEOUT:.0f}s "
+            "(the store layout changed, or the offer is closed)"
         )
 
     for _ in range(3):
@@ -700,11 +864,30 @@ def claim(driver) -> str:
 
 def get_user_id(cli_value: str | None) -> str:
     user_id = (cli_value or os.getenv("NINJA_USER_ID") or os.getenv("USER_ID") or "").strip()
+
+    # Nobody likes a one-line error when they double-clicked a .bat file.
+    if not user_id and sys.stdin is not None and sys.stdin.isatty():
+        log("No account id supplied.")
+        for _ in range(3):
+            try:
+                typed = input("Account ID (26 letters/digits): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                raise SystemExit("Aborted while asking for the account id")
+            if USER_ID_RE.match(typed):
+                return typed
+            log(f"{typed!r} is not a 26 character id -- find it at the bottom of the in-game profile page.")
+
     if not user_id:
-        raise SystemExit("Missing user id: set NINJA_USER_ID or pass it as the first argument")
+        raise SystemExit(
+            "Missing account id.\n"
+            "  Docker : docker run --rm --shm-size=1g -e NINJA_USER_ID=<26 chars> ninja-defenders-free\n"
+            "  Local  : python claim.py <26 chars>\n"
+            "  Where  : in game, profile picture (top left) -> the id sits at the bottom of the page."
+        )
+
     if not USER_ID_RE.match(user_id):
         raise SystemExit(
-            "Invalid user id: expected 26 letters/digits (the account id shown at the "
+            "Invalid account id: expected 26 letters/digits (the account id shown at the "
             f"bottom of the in-game profile), got {user_id!r}"
         )
     return user_id
@@ -746,7 +929,6 @@ def main(argv: list[str] | None = None) -> int:
         dismiss_overlays(driver)
 
         login(driver, user_id)
-        log("Logged in")
 
         result = claim(driver)
         elapsed = time.time() - started
