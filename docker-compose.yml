@@ -1,0 +1,19 @@
+services:
+  claim:
+    build: .
+    image: ninja-defenders-free:latest
+    container_name: ninja-defenders-free
+
+    # The account id lives in .env (copy .env.example, then fill it in).
+    env_file:
+      - .env
+
+    # Firefox needs more shared memory than Docker's 64 MB default.
+    shm_size: "1g"
+
+    # One-shot job: exit as soon as the reward is claimed.
+    restart: "no"
+
+    # Screenshots and DOM dumps land in ./artifacts when something goes wrong.
+    volumes:
+      - ./artifacts:/app/artifacts
