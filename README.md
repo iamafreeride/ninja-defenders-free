@@ -1,6 +1,10 @@
 # ninja-defenders-free
 
-領取《Ninja Defenders : Cat Shinobi》網頁商店（Xsolla Web Shop）每天一次的免費
+<p align="center">
+  <img src="assets/icon.webp" alt="Ninja Defenders icon" width="128" height="128">
+</p>
+
+領取《Ninja Defenders : Cat Shinobi》網頁商店（Unity Web Shop）每天一次的免費
 **1 Daily Free Ruby Cat Stone**（畫面顯示「每天免費紅貓石1個」），全自動、無人值守、跑完就結束。
 
 結構與容器化方式參考 [simao-silva/noip-renewer](https://github.com/simao-silva/noip-renewer)（MIT）：
@@ -22,7 +26,7 @@ docker run --rm --shm-size=1g -e NINJA_USER_ID=<你的26碼ID> ninja-defenders-f
 
 ## 它是怎麼運作的
 
-1. 啟動無頭瀏覽器（映像內建 Firefox；Windows 本機預設 Edge），開啟 <https://catshinobi.xsolla.site/>。
+1. 啟動無頭瀏覽器（映像內建 Firefox；Windows 本機預設 Edge），開啟 <https://shop.unity.com/crescento/game/webshop-cc08e9e8>。
 2. 關掉 cookie 同意列。
 3. 點右上角 **Log in / 登入**，在 `#user-id-input` 填入 26 碼帳號 ID，按下方登入鈕。
    - 送出策略會依序嘗試：**按鈕文字比對 → `type=submit` → 在輸入框按 Enter**（最多 3 輪）。
@@ -85,7 +89,7 @@ python -m venv .venv
 成功時的輸出長這樣（實際測試）：
 
 ```
-[21:43:30] Ninja Defenders daily reward -- target https://catshinobi.xsolla.site/
+[21:43:30] Ninja Defenders daily reward -- target https://shop.unity.com/crescento/game/webshop-cc08e9e8
 [21:43:30] Starting Edge (headless)
 [21:43:44] Page loaded
 [21:43:53] Opening login dialog
@@ -106,7 +110,7 @@ python -m venv .venv
 | `BROWSER` | `firefox` | `firefox` / `edge` / `chrome`（`run.bat` 會自動設成 `edge`） |
 | `HEADLESS` | `true` | `false` 會開可見的瀏覽器，方便看它到底在點什麼 |
 | `DEBUG` | `false` | 失敗時保存截圖 + DOM 到 `artifacts/` |
-| `SITE_URL` | `https://catshinobi.xsolla.site/` | 商店網址 |
+| `SITE_URL` | `https://shop.unity.com/crescento/game/webshop-cc08e9e8` | 商店網址 |
 | `LOGIN_TIMEOUT` | `60` | 等登入完成的秒數 |
 | `CLAIM_TIMEOUT` | `90` | 等免費按鈕出現的秒數 |
 | `RESULT_TIMEOUT` | `60` | 等「已擁有」或成功提示的秒數 |
@@ -185,9 +189,9 @@ docker run --rm --shm-size=1g -e NINJA_USER_ID=<ID> ninja-defenders-free
 ## 免責聲明
 
 - 僅供**你自己的帳號**、每天一次使用；請勿用來代領他人帳號或大量註冊。
-- 這是瀏覽器自動化，不是官方 API。Xsolla 或 CookApps 隨時可能改版、加上驗證或限制，
+- 這是瀏覽器自動化，不是官方 API。Unity 或 CookApps 隨時可能改版、加上驗證或限制，
   也可能與其服務條款相牴觸 —— 風險自負。
-- 本專案與 CookApps、Xsolla 均無任何關係。
+- 本專案與 CookApps、Unity 均無任何關係。
 
 ## License
 

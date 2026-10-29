@@ -4,9 +4,10 @@ ninja-defenders-free
 ====================
 
 Claim the daily free "Ruby Cat Stone" bundle from the Ninja Defenders web shop
-(https://catshinobi.xsolla.site/) with zero human interaction.
+(https://shop.unity.com/crescento/game/webshop-cc08e9e8) with zero human
+interaction.
 
-The Xsolla web shop has no username/password: you type your 26 character
+The Unity web shop has no username/password: you type your 26 character
 in-game account ID into a field (``#user-id-input``), press "Log in", and the
 shop loads your account.  This script does that, claims the free daily item,
 and exits -- so ``docker run --rm`` tears the container down by itself.
@@ -52,7 +53,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 # Configuration (everything can be overridden with environment variables)
 # --------------------------------------------------------------------------- #
 
-BASE_URL = os.getenv("SITE_URL", "https://catshinobi.xsolla.site/")
+BASE_URL = os.getenv(
+    "SITE_URL", "https://shop.unity.com/crescento/game/webshop-cc08e9e8"
+)
 
 USER_ID_SELECTOR = os.getenv("USER_ID_SELECTOR", "#user-id-input")
 
