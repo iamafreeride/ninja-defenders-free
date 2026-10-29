@@ -14,7 +14,7 @@
 |---|---|---|
 | 目標 | No-IP 免費網域續期 | Ninja Defenders 每日免費紅貓石 |
 | 登入方式 | 帳號 + 密碼（+ TOTP） | **只有 26 碼遊戲內帳號 ID** |
-| 登入欄位 | `#username` / `#password` | `#user-id-input` |
+| 登入欄位 | `#username` / `#password` | `input[name="playerId"]` |
 | 動作 | 逐一點 `Confirm` | 點免費卡片的領取鈕 |
 | 結束 | 登出後結束 | 領取成功／今日已領後結束 |
 
@@ -28,14 +28,15 @@ docker run --rm --shm-size=1g -e NINJA_USER_ID=<你的26碼ID> ninja-defenders-f
 
 1. 啟動無頭瀏覽器（映像內建 Firefox；Windows 本機預設 Edge），開啟 <https://shop.unity.com/crescento/game/webshop-cc08e9e8>。
 2. 關掉 cookie 同意列。
-3. 點右上角 **Log in / 登入**，在 `#user-id-input` 填入 26 碼帳號 ID，按下方登入鈕。
+3. 點右上角 **Log in / 登入**，在 `input[name="playerId"]` 填入 26 碼帳號 ID，按下方登入鈕。
    - 送出策略會依序嘗試：**按鈕文字比對 → `type=submit` → 在輸入框按 Enter**（最多 3 輪）。
    - 若已有登入狀態（例如使用固定 profile），會自動跳過登入。
 4. 找到免費卡片上的按鈕：
-   - `button[data-testid="free-button"]` 或 `button[data-button-type="free"]`
+   - `a[data-slot="product-card"][href*="unity_web_free"] button[data-slot="buy-cta"]`
+   - 舊版 `button[data-testid="free-button"]` / `button[data-button-type="free"]` 仍保留為備援。
    - 這是**語言無關**的定位方式，所以商店顯示中文、英文、日文、韓文都不影響。
 5. 判斷狀態：
-   - 按鈕 `disabled` 或含 `[data-testid="owned"]`（顯示「已擁有」）→ 今天已領，直接 exit 0。
+   - 按鈕 `disabled`、文字含「已擁有／已領取」，或含 `[data-testid="owned"]` → 今天已領，直接 exit 0。
    - 否則點下去，處理可能出現的確認彈窗，然後等按鈕變成 owned／出現成功提示。
 6. 印出結果並結束行程；用 `docker run --rm` 時容器也一併消失。
 
@@ -114,7 +115,7 @@ python -m venv .venv
 | `LOGIN_TIMEOUT` | `60` | 等登入完成的秒數 |
 | `CLAIM_TIMEOUT` | `90` | 等免費按鈕出現的秒數 |
 | `RESULT_TIMEOUT` | `60` | 等「已擁有」或成功提示的秒數 |
-| `USER_ID_SELECTOR` | `#user-id-input` | 帳號輸入框 selector |
+| `USER_ID_SELECTOR` | `#user-id-input, input[name='playerId']` | 帳號輸入框 selector（新舊商店皆可） |
 | `WEBDRIVER_PATH` | 自動 | 指定 geckodriver / msedgedriver 路徑（自動下載失敗時用） |
 | `BROWSER_PROFILE_DIR` | 無 | 指定瀏覽器 profile 目錄，可保留登入狀態 |
 | `ARTIFACTS_DIR` | `/app/artifacts` | 除錯產物目錄 |
@@ -164,8 +165,9 @@ docker run --rm --shm-size=1g -e NINJA_USER_ID=<ID> ninja-defenders-free
 - Firefox 在 Windows 上報 `Unable to write to temporary directory` → 把 `TEMP`/`TMP` 指到可寫目錄，或改用 `BROWSER=edge`
 
 **找不到免費按鈕**
-商店改版了。看 `artifacts/*.html`，找 `data-testid="free-button"` 或 `data-button-type="free"` 是否還在；
-若改成別的屬性，覆蓋 `FREE_BUTTON_SELECTOR`（見 `claim.py` 的 `find_free_button`）。
+商店改版了。看 `artifacts/*.html`，找免費卡片上的 `data-slot="buy-cta"` 或舊版
+`data-testid="free-button"` 是否還在；若改成別的屬性，覆蓋 `FREE_BUTTON_SELECTOR`
+（見 `claim.py` 的 `find_free_button`）。
 
 **Firefox 隨機崩潰（Docker）**
 `/dev/shm` 太小，加 `--shm-size=1g`（compose 檔已設定）。

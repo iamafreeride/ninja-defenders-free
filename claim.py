@@ -57,12 +57,16 @@ BASE_URL = os.getenv(
     "SITE_URL", "https://shop.unity.com/crescento/game/webshop-cc08e9e8"
 )
 
-USER_ID_SELECTOR = os.getenv("USER_ID_SELECTOR", "#user-id-input")
+USER_ID_SELECTOR = os.getenv(
+    "USER_ID_SELECTOR", "#user-id-input, input[name='playerId']"
+)
 
 #: The free/gift button on the store card.  These data attributes are stable
 #: across languages, unlike the button label ("Free" / "免費" / "無料" ...).
 FREE_BUTTON_SELECTOR = os.getenv(
     "FREE_BUTTON_SELECTOR",
+    "a[data-slot='product-card'][href*='unity_web_free'] button[data-slot='buy-cta'], "
+    "a[data-slot='product-card'][href*='nns_shop_akaneko_1_1'] button[data-slot='buy-cta'], "
     "button[data-testid='free-button'], "
     "button[data-button-type='free'], "
     "[data-testid='free-button']",
@@ -712,6 +716,9 @@ def button_is_owned(button) -> bool:
         if button.get_attribute("disabled") is not None:
             return True
         if "disabled" in (button.get_attribute("class") or ""):
+            return True
+        text = norm(button.text)
+        if text and any(word in text for word in ("owned", "已擁有", "已拥有", "已領取", "已领取")):
             return True
         return bool(
             button.find_elements(By.CSS_SELECTOR, "[data-testid='owned'], [data-id='owned']")
