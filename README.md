@@ -4,7 +4,7 @@
   <img src="assets/icon.webp" alt="Ninja Defenders icon" width="128" height="128">
 </p>
 
-[English](README.md) | **繁體中文**
+[English](README_EN.md) | **繁體中文**
 
 自動領取《Ninja Defenders : Cat Shinobi》網頁商店（Unity Web Shop）每天一次的免費 **1 Daily Free Ruby Cat Stone**（畫面顯示「每天免費紅貓石1個」）。全自動、無人值守，跑完就結束。
 
